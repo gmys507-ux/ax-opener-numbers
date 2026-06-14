@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AX 오프너 발표덱 — 숫자판 게임</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif;
+    background: #1a1a2e;
+    overflow: hidden;
+    color: #0F172A;
+  }
+
+  /* 슬라이드 컨테이너 — 16:9 유지 */
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #slide-wrap {
+    position: relative;
+    width: 100%; height: 100%;
+    /* 16:9 비율 유지 */
+  }
+
+  /* 슬라이드 */
+  .slide {
+    display: none;
+    position: absolute; inset: 0;
+    background: #ffffff;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2% 2.5%;
+    user-select: none;
+  }
+  .slide.board-slide { padding: 0; }
+  .slide.active { display: flex; }
+
+  /* 하단 바 */
+  #bottom-bar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 36px;
+    background: rgba(255,255,255,0.92);
+    border-top: 1px solid #e2e8f0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 2rem;
+    font-size: 11px; color: #94a3b8;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+  }
+
+  /* 발표자 멘트 패널 */
+  #note-panel {
+    display: none;
+    position: fixed;
+    bottom: 36px; left: 0; right: 0;
+    background: rgba(15,23,42,0.92);
+    color: #e2e8f0;
+    padding: 1rem 2rem;
+    font-size: 14px; line-height: 1.7;
+    z-index: 99;
+    backdrop-filter: blur(8px);
+    border-top: 2px solid #00C781;
+    max-height: 130px; overflow-y: auto;
+  }
+  #note-panel.visible { display: block; }
+  #note-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+    color: #00C781; margin-bottom: 4px;
+  }
+
+  /* 타이포 유틸 */
+  .title-xl { font-size: clamp(2rem, 5vw, 3.8rem); font-weight: 800; line-height: 1.1; }
+  .title-lg { font-size: clamp(1.6rem, 4vw, 3rem); font-weight: 700; line-height: 1.2; }
+  .title-md { font-size: clamp(1.2rem, 3vw, 2rem); font-weight: 600; line-height: 1.4; }
+  .body-lg  { font-size: clamp(1rem, 2.2vw, 1.5rem); line-height: 1.7; }
+  .accent   { color: #00C781; }
+  .dimmed   { color: #64748b; }
+
+  /* ——— 게임판 공통 ——— */
+  .board-wrap {
+    position: relative;
+    width: 99%; height: 95%;
+    border: 1px solid #f1f5f9;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .board-label {
+    position: absolute; top: 10px; left: 50%;
+    transform: translateX(-50%); z-index: 8;
+    background: rgba(255,255,255,0.88); border: 1px solid var(--line);
+    border-radius: 100px; padding: 3px 16px;
+    font-size: clamp(0.8rem, 1.5vw, 1.1rem); color: #64748b; font-weight: 600;
+    backdrop-filter: blur(4px);
+  }
+  /* 연습 슬라이드 표시(발표자만 알아보는 우하단 점) */
+  .practice-mark {
+    position: absolute; right: 16px; bottom: 14px; z-index: 8;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #9ca3af;
+  }
+  /* 전체화면 버튼 */
+  #fs-btn {
+    border: 1.5px solid var(--emerald); background: #f0fdf9; color: #0F6E56;
+    border-radius: 100px; padding: 4px 14px; font-size: 12px; font-weight: 700;
+    cursor: pointer; font-family: inherit; white-space: nowrap;
+  }
+  #fs-btn:hover { background: #d7f7ec; }
+  .num-item {
+    position: absolute;
+    font-family: 'Pretendard Variable', Pretendard, sans-serif;
+    font-weight: 700;
+    cursor: default;
+    line-height: 1;
+    transition: color 0.4s, font-size 0.5s, transform 0.5s;
+  }
+  /* 패턴 reveal: 각 칸의 시작 숫자 1~9에 동그라미 */
+  .num-item.circled {
+    border: 3px solid #ef4444;
+    border-radius: 50%;
+    padding: 0.06em 0.24em;
+    box-shadow: 0 0 0 2px #fff;
+  }
+
+  /* ——— 타이머 ——— */
+  .timer-display {
+    position: absolute;
+    top: 12px; right: 18px;
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    font-weight: 800;
+    color: #0F172A;
+    z-index: 10;
+    background: rgba(255,255,255,0.85);
+    border-radius: 8px;
+    padding: 4px 16px;
+    backdrop-filter: blur(4px);
+  }
+  .timer-display.done { color: #ef4444; }
+  .timer-start-btn {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: #00C781; color: #fff;
+    border: none; border-radius: 12px;
+    padding: 0.8em 2.4em;
+    font-size: clamp(1rem, 2vw, 1.5rem);
+    font-weight: 700;
+    cursor: pointer;
+    z-index: 20;
+    font-family: 'Pretendard Variable', Pretendard, sans-serif;
+    box-shadow: 0 4px 24px rgba(0,199,129,0.35);
+    transition: opacity 0.2s;
+  }
+  .timer-start-btn:hover { opacity: 0.88; }
+
+  /* 타이머 컨트롤(시간 선택 + 시작) */
+  .timer-controls {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; align-items: center; gap: 1rem;
+    z-index: 20;
+  }
+  .duration-picker { display: flex; align-items: center; gap: 0.5rem; }
+  .dur-label { font-size: 0.85rem; color: #94a3b8; font-weight: 600; margin-right: 0.3rem; }
+  .dur-btn {
+    font-family: inherit; font-weight: 700;
+    font-size: clamp(0.9rem, 1.6vw, 1.15rem);
+    padding: 0.45em 1.1em; border-radius: 100px;
+    border: 2.5px solid #e2e8f0; background: #fff; color: #64748b;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .dur-btn.active { border-color: #00C781; color: #00C781; background: #f0fdf9; }
+  .timer-controls .timer-start-btn { position: static; transform: none; display: inline-flex; }
+
+  /* 타이머 깜빡임(10초 이하) */
+  .timer-display.blink { animation: timer-blink 0.55s steps(2, start) infinite; }
+  @keyframes timer-blink {
+    0%   { color:#ef4444; background:rgba(254,226,226,0.95); }
+    100% { color:#fff;    background:#ef4444; }
+  }
+
+  /* 시간 초과 오버레이 (가운데) */
+  .time-up-overlay {
+    display: none;
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 30;
+    background: rgba(239,68,68,0.96); color: #fff;
+    font-size: clamp(2.2rem, 7vw, 5rem); font-weight: 900;
+    padding: 0.4em 1.1em; border-radius: 18px;
+    box-shadow: 0 12px 48px rgba(239,68,68,0.45);
+    white-space: nowrap;
+  }
+  .time-up-overlay.show { display: block; animation: timeup-pop 0.4s cubic-bezier(.2,1.3,.4,1) forwards; }
+  @keyframes timeup-pop {
+    from { transform: translate(-50%,-50%) scale(0.6); opacity: 0; }
+    to   { transform: translate(-50%,-50%) scale(1);   opacity: 1; }
+  }
+
+  /* 게임판 긴박 테두리(10초 이하) */
+  .board-wrap.urgent { animation: board-pulse 0.55s ease-in-out infinite; }
+  @keyframes board-pulse {
+    0%,100% { box-shadow: inset 0 0 0 0 rgba(239,68,68,0); }
+    50%     { box-shadow: inset 0 0 0 7px rgba(239,68,68,0.28); }
+  }
+
+  /* 음소거 토글 */
+  .mute-btn {
+    position: absolute; top: 12px; left: 18px; z-index: 12;
+    border: none; background: rgba(255,255,255,0.85); border-radius: 8px;
+    padding: 4px 10px; font-size: 1.1rem; cursor: pointer; backdrop-filter: blur(4px);
+  }
+
+  /* ——— 격자 오버레이 ——— */
+  .grid-overlay {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .grid-line-h, .grid-line-v {
+    position: absolute;
+    background: rgba(99, 102, 241, 0.35);
+    /* 점선 효과: gradient */
+  }
+  .grid-line-h {
+    left: 0; right: 0; height: 2px;
+    background: repeating-linear-gradient(90deg, rgba(99,102,241,0.5) 0, rgba(99,102,241,0.5) 10px, transparent 10px, transparent 20px);
+  }
+  .grid-line-v {
+    top: 0; bottom: 0; width: 2px;
+    background: repeating-linear-gradient(180deg, rgba(99,102,241,0.5) 0, rgba(99,102,241,0.5) 10px, transparent 10px, transparent 20px);
+  }
+
+  /* ——— 손들기 눈금 ——— */
+  .raise-bar {
+    display: flex; align-items: center; gap: 1.2rem;
+    margin-top: 0.6rem;
+  }
+  .raise-badge {
+    font-size: clamp(0.85rem, 1.8vw, 1.25rem);
+    font-weight: 700; padding: 0.4em 1.2em;
+    border-radius: 100px;
+    border: 2.5px solid #e2e8f0;
+    color: #64748b;
+    background: #f8fafc;
+    transition: all 0.2s;
+  }
+  .raise-badge.active {
+    border-color: #00C781; color: #00C781; background: #f0fdf9;
+  }
+
+  /* ——— S1 예시 보드 ——— */
+  .sample-board {
+    position: relative;
+    width: 62%; height: 28%;
+    border: 2px dashed #e2e8f0;
+    border-radius: 10px;
+    background: #fafafa;
+  }
+  #sample-board span {
+    position: absolute; transform: translate(-50%, -50%);
+    font-weight: 700; line-height: 1;
+  }
+  .sample-caption {
+    font-size: clamp(0.78rem, 1.5vw, 1.05rem);
+    color: #94a3b8; margin-top: 0.6rem; text-align: center;
+  }
+  .rule-card {
+    display: flex; align-items: center; gap: 0.55rem;
+    background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 14px;
+    padding: 0.8em 1.1em; font-size: clamp(0.9rem, 1.8vw, 1.3rem);
+  }
+  .rule-num { color: #00C781; font-weight: 800; font-size: 1.35em; line-height: 1; }
+
+  /* ——— S6 패턴 reveal ——— */
+  .big-copy {
+    font-size: clamp(1.5rem, 3.5vw, 2.8rem);
+    font-weight: 800;
+    color: #0F172A;
+    text-align: center;
+    line-height: 1.25;
+  }
+  .big-copy .hl { color: #00C781; }
+
+  /* ——— S7 ——— */
+  .card-block {
+    background: #f0fdf9;
+    border-left: 5px solid #00C781;
+    border-radius: 8px;
+    padding: 1.2em 1.8em;
+    margin-top: 1.2rem;
+    width: 100%; max-width: 780px;
+  }
+  .card-block p { font-size: clamp(0.9rem, 2vw, 1.3rem); line-height: 1.7; }
+
+  /* ——— 네비 힌트 ——— */
+  .nav-hint {
+    position: fixed;
+    top: 50%; right: 18px;
+    transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 8px;
+    z-index: 90;
+    opacity: 0.35;
+    transition: opacity 0.2s;
+  }
+  .nav-hint:hover { opacity: 0.8; }
+  .nav-btn {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(15,23,42,0.6);
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* S4 quote 강조 */
+  .quote-slide-bg {
+    background: #ffffff;
+  }
+  .quote-text {
+    font-size: clamp(1.5rem, 3.8vw, 3rem);
+    font-weight: 800;
+    color: #0F172A;
+    text-align: center;
+    line-height: 1.3;
+    max-width: 900px;
+  }
+  .quote-sub {
+    font-size: clamp(0.95rem, 2vw, 1.4rem);
+    color: #64748b;
+    text-align: center;
+    margin-top: 1.2rem;
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+<div id="slide-wrap">
+
+  <!-- ===================== S1: 오프닝 ===================== -->
+  <div class="slide active" id="s1">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2vh;width:100%;max-width:920px;margin:auto;text-align:center;">
+      <div class="title-xl">잠깐, 게임 하나 하고 갈게요 <span style="font-size:0.8em;">🎮</span></div>
+    </div>
+  </div>
+
+  <!-- ===================== 연습판 ===================== -->
+  <div class="slide board-slide" id="spractice">
+    <div class="board-wrap" id="practice-board">
+      <button class="mute-btn" onclick="toggleMute()" title="소리 켜기/끄기">🔊</button>
+      <div class="timer-display">30</div>
+      <div class="time-up-overlay">⏰ 시간 초과!</div>
+      <div class="timer-controls">
+        <div class="duration-picker">
+          <span class="dur-label">시간 선택</span>
+          <button class="dur-btn active" data-sec="30" onclick="setDuration(30)">30초</button>
+          <button class="dur-btn" data-sec="45" onclick="setDuration(45)">45초</button>
+          <button class="dur-btn" data-sec="60" onclick="setDuration(60)">60초</button>
+        </div>
+        <button class="timer-start-btn" onclick="startTimer()">▶ 시작 (Space)</button>
+      </div>
+      <div class="practice-mark" title="연습 슬라이드 표시"></div>
+    </div>
+  </div>
+
+  <!-- ===================== S2: 실제 게임판 ===================== -->
+  <div class="slide board-slide" id="s2">
+    <div class="board-wrap" id="game-board">
+      <button class="mute-btn" onclick="toggleMute()" title="소리 켜기/끄기">🔊</button>
+      <div class="timer-display">30</div>
+      <div class="time-up-overlay">⏰ 시간 초과!</div>
+      <div class="timer-controls">
+        <div class="duration-picker">
+          <span class="dur-label">시간 선택</span>
+          <button class="dur-btn active" data-sec="30" onclick="setDuration(30)">30초</button>
+          <button class="dur-btn" data-sec="45" onclick="setDuration(45)">45초</button>
+          <button class="dur-btn" data-sec="60" onclick="setDuration(60)">60초</button>
+        </div>
+        <button class="timer-start-btn" onclick="startTimer()">▶ 시작 (Space)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== S4: 질문 ===================== -->
+  <div class="slide quote-slide-bg" id="s4">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2vh;width:100%;">
+      <div class="quote-text">
+        그렇게 익숙한 숫자인데,<br>
+        왜 30초 안에 <span class="accent">못 찾았을까요?</span>
+      </div>
+      <div style="margin-top:2vh;width:60px;height:4px;background:#00C781;border-radius:4px;"></div>
+    </div>
+  </div>
+
+  <!-- ===================== S5: 격자 ===================== -->
+  <div class="slide board-slide" id="s5">
+    <div class="board-wrap" id="grid-board">
+      <div class="grid-overlay" id="grid-overlay"></div>
+    </div>
+  </div>
+
+  <!-- ===================== S6: 패턴 reveal ===================== -->
+  <div class="slide" id="s6">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:1vh;width:100%;height:100%;justify-content:center;">
+      <div class="board-wrap" id="reveal-board" style="height:80%;">
+        <div class="grid-overlay" id="reveal-grid-overlay"></div>
+      </div>
+      <div class="big-copy" style="font-size:clamp(1.2rem,2.6vw,2.1rem);">
+        패턴(규칙)이 보이면, <span class="hl">같은 정보도 다르게 보입니다.</span>
+      </div>
+      <div class="dimmed" style="font-size:clamp(0.8rem,1.5vw,1.05rem);text-align:center;">
+        각 칸엔 <strong>9씩 커지는 숫자</strong>가 숨어 있었어요 &nbsp;·&nbsp; 1·10·19·28·37 &nbsp;/&nbsp; 2·11·20·29·38 &nbsp;…
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== S7: AX 착지 ===================== -->
+  <div class="slide" id="s7">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2vh;width:100%;max-width:820px;margin:auto;">
+      <div class="title-lg" style="text-align:center;">
+        익숙한 숫자였는데도,<br>
+        <span class="accent">왜 찾기 어려웠을까요?</span>
+      </div>
+      <div class="card-block">
+        <p>
+          크기·색·위치가 제각각이라 — <strong>규칙이 안 보였기 때문</strong>이에요.<br>
+          지금 AI도 똑같죠. 클로드코드·MCP·스킬… <strong>어려워서가 아니라, 아직 규칙이 안 보일 뿐.</strong>
+        </p>
+      </div>
+      <div style="margin-top:1.2vh;text-align:center;">
+        <div class="title-md" style="font-weight:800;line-height:1.5;color:#0F172A;">
+          규칙이 보이면, <span class="accent">같은 것도 쉬워집니다.</span>
+        </div>
+        <div class="title-md" style="font-weight:800;margin-top:0.8rem;color:#0F172A;">
+          그 규칙, <span class="accent">이번 AX 멘토링에서</span> 같이 찾고 직접 써봅니다.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /slide-wrap -->
+</div><!-- /stage -->
+
+<!-- 네비 버튼 -->
+<div class="nav-hint">
+  <button class="nav-btn" onclick="prevSlide()" title="이전">&#8593;</button>
+  <button class="nav-btn" onclick="nextSlide()" title="다음">&#8595;</button>
+</div>
+
+<!-- 발표자 멘트 패널 -->
+<div id="note-panel">
+  <div id="note-label">발표자 멘트 (N 키로 토글)</div>
+  <div id="note-text"></div>
+</div>
+
+<!-- 하단 바 -->
+<div id="bottom-bar">
+  <span>AX 오프너 발표덱 &nbsp;·&nbsp; ←→ 넘김 &nbsp;·&nbsp; N 멘트 &nbsp;·&nbsp; Space 타이머</span>
+  <div style="display:flex;align-items:center;gap:14px;">
+    <button id="fs-btn" onclick="toggleFullscreen()">⛶ 전체화면</button>
+    <span id="slide-counter">1 / 7</span>
+  </div>
+</div>
+
+<script>
+// ======================================================
+//  공유 게임판 positions (1~40) — 중심좌표(%) + vmin 크기 · 첨부 이미지 배치 재현
+// ======================================================
+const POSITIONS = [
+  // [num, left%(중심), top%(중심), size(vmin), color, rotate(deg)] — 1~40, 첨부 이미지 배치 재현
+  // ── 1행(상단) ──
+  [ 1,  5, 13, 8.4, '#0F172A', 0],
+  [28,  8,  4, 2.8, '#0F172A', 0],
+  [37, 18,  9, 3.2, '#0F172A', 0],
+  [19,  9, 21, 4.8, '#0F172A', 0],
+  [10, 23, 20, 7.4, '#0F172A', 0],
+  [29, 36, 13, 7.6, '#0F172A', 0],
+  [20, 49,  7, 6.4, '#0F172A', 0],
+  [38, 48, 23, 9.0, '#0F172A', 0],
+  [ 2, 61,  4, 2.8, '#0F172A', 0],
+  [11, 59, 13, 3.2, '#0F172A', 0],
+  [39, 70,  4, 3.0, '#0F172A', 0],
+  [12, 82, 13, 7.4, '#0F172A', 0],
+  [30, 90,  8, 5.2, '#0F172A', 0],
+  [21, 90, 22, 4.8, '#a8c0dc', 0],
+  [ 3, 70, 28, 2.8, '#0F172A', 0],
+  // ── 2행(중단) ──
+  [22,  7, 42, 8.0, '#0F172A', 0],
+  [31,  8, 55, 3.6, '#0F172A', 0],
+  [ 4, 15, 57, 3.6, '#0F172A', 0],
+  [40, 17, 47, 4.2, '#0F172A', 0],
+  [23, 39, 42, 4.8, '#0F172A', 0],
+  [ 5, 54, 40, 2.8, '#0F172A', 0],
+  [13, 30, 54, 6.8, '#0F172A', 0],
+  [32, 41, 54, 6.8, '#e0533a', 0],
+  [14, 58, 49, 4.8, '#e08e3c', 0],
+  [33, 80, 42, 7.4, '#0F172A', 0],
+  [15, 91, 43, 4.2, '#0F172A', 0],
+  [24, 82, 55, 7.4, '#0F172A', 0],
+  [ 6, 94, 50, 2.8, '#2d4a6b', 0],
+  // ── 3행(하단) ──
+  [ 7,  5, 70, 2.8, '#0F172A', 0],
+  [25, 18, 70, 3.2, '#0F172A', 0],
+  [16,  9, 84, 7.4, '#b5544a', 0],
+  [34, 18, 91, 3.2, '#0F172A', 0],
+  [35, 41, 84, 7.4, '#0F172A', 0],
+  [ 8, 62, 73, 6.8, '#0F172A', 0],
+  [26, 51, 92, 4.2, '#c79a4a', 0],
+  [17, 60, 90, 2.8, '#0F172A', 0],
+  [18, 79, 84, 7.4, '#2d4a6b', 0],
+  [27, 90, 80, 3.2, '#0F172A', 0],
+  [36, 81, 92, 4.8, '#bcd0e6', 0],
+  [ 9, 91, 94, 2.8, '#0F172A', 0],
+];
+
+// 연습판(첨부 이미지 배치) — 1~40, 실제판과 다른 배치(스포 방지) · 격자 reveal 없음
+const PRACTICE_POSITIONS = [
+  [28, 7, 5, 3.0, '#0F172A', 0],   [29, 10, 16, 9.0, '#0F172A', 0], [37, 17, 9, 3.2, '#0F172A', 0],
+  [ 2, 24, 11, 2.8, '#0F172A', 0], [35, 34, 11, 8.4, '#0F172A', 0], [20, 50, 11, 7.0, '#0F172A', 0],
+  [ 3, 63, 7, 2.8, '#0F172A', 0],  [12, 83, 13, 8.4, '#0F172A', 0], [30, 93, 9, 5.0, '#0F172A', 0],
+  [10, 26, 28, 8.0, '#0F172A', 0], [39, 37, 28, 3.2, '#0F172A', 0], [11, 64, 22, 3.2, '#0F172A', 0],
+  [ 1, 16, 36, 7.6, '#0F172A', 0], [33, 52, 36, 8.4, '#0F172A', 0], [ 4, 70, 35, 3.4, '#0F172A', 0],
+  [26, 74, 42, 5.0, '#c79a4a', 0], [22, 6, 45, 8.0, '#0F172A', 0],  [23, 39, 45, 5.0, '#0F172A', 0],
+  [ 5, 24, 52, 2.8, '#0F172A', 0], [21, 67, 49, 4.6, '#a8c0dc', 0], [15, 93, 47, 4.2, '#0F172A', 0],
+  [40, 16, 58, 4.4, '#0F172A', 0], [13, 30, 66, 7.0, '#0F172A', 0], [32, 48, 63, 7.6, '#e0533a', 0],
+  [14, 61, 58, 4.8, '#e08e3c', 0], [24, 85, 63, 7.6, '#0F172A', 0], [ 7, 3, 77, 2.8, '#0F172A', 0],
+  [31, 11, 77, 3.4, '#0F172A', 0], [25, 23, 83, 4.4, '#0F172A', 0], [19, 33, 87, 4.6, '#0F172A', 0],
+  [38, 45, 85, 8.4, '#0F172A', 0], [ 8, 63, 83, 7.6, '#0F172A', 0], [18, 81, 85, 7.6, '#2d4a6b', 0],
+  [27, 93, 83, 3.2, '#0F172A', 0], [16, 11, 93, 7.0, '#b5544a', 0], [34, 23, 95, 3.2, '#0F172A', 0],
+  [ 6, 45, 97, 2.8, '#2d4a6b', 0], [17, 63, 95, 3.0, '#0F172A', 0], [36, 81, 96, 4.8, '#bcd0e6', 0],
+  [ 9, 93, 97, 2.8, '#0F172A', 0],
+];
+
+// 예시 보드 (1~12)
+const SAMPLE_POSITIONS = [
+  [ 1, 10, 12,  2.0, '#0F172A',  8],
+  [ 2, 70, 58,  1.5, '#ef4444', -10],
+  [ 3, 40, 28,  2.6, '#0F172A',  5],
+  [ 4, 20, 70,  1.4, '#3b82f6',  14],
+  [ 5, 58, 12,  1.8, '#0F172A', -6],
+  [ 6, 84, 38,  3.2, '#0F172A',  3],
+  [ 7, 30, 52,  1.3, '#f97316', -16],
+  [ 8, 52, 78,  2.2, '#0F172A', 10],
+  [ 9,  6, 45,  2.8, '#0F172A', -4],
+  [10, 74, 24,  1.4, '#94a3b8', 18],
+  [11, 44, 88,  1.7, '#0F172A', -8],
+  [12, 88, 10,  1.3, '#0F172A', 13],
+];
+
+// 9칸 색(reveal 시 칸별 그룹이 보이게) — 읽기순 1~9칸
+const CELL_PALETTE = ['#e0533a','#e08e3c','#caa93a','#2e9e6b','#0ea5b7','#3b82f6','#6366f1','#a855f7','#d6457f'];
+const BOARD_SCALE = 1.55;  // 게임판 숫자 전체 배율(화면 가득·다닥다닥)
+function renderBoard(containerId, positions, opts = {}) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  // 기존 숫자 제거 (그리드 오버레이 제외)
+  [...container.querySelectorAll('.num-item')].forEach(el => el.remove());
+  const {uniform = false, cellColor = false, circle = false} = opts;
+  positions.forEach(([num, l, t, sz, col, rot]) => {
+    const el = document.createElement('span');
+    el.className = 'num-item';
+    el.textContent = num;
+    if (circle && num <= 9) el.classList.add('circled');
+    if (uniform) {
+      el.style.fontSize = '6vmin';
+      el.style.color = cellColor ? CELL_PALETTE[(num - 1) % 9] : '#0F172A';
+      el.style.transform = 'translate(-50%, -50%)';
+    } else {
+      el.style.fontSize = (sz * BOARD_SCALE) + 'vmin';
+      el.style.color = col;
+      el.style.transform = `translate(-50%, -50%) rotate(${rot}deg)`;
+    }
+    el.style.left = l + '%';
+    el.style.top = t + '%';
+    container.appendChild(el);
+  });
+}
+
+function buildGridOverlay(overlayId, cols, rows) {
+  const ov = document.getElementById(overlayId);
+  if (!ov) return;
+  ov.innerHTML = '';
+  for (let i = 1; i < rows; i++) {
+    const line = document.createElement('div');
+    line.className = 'grid-line-h';
+    line.style.top = (100 / rows * i) + '%';
+    ov.appendChild(line);
+  }
+  for (let j = 1; j < cols; j++) {
+    const line = document.createElement('div');
+    line.className = 'grid-line-v';
+    line.style.left = (100 / cols * j) + '%';
+    ov.appendChild(line);
+  }
+}
+
+// ======================================================
+//  슬라이드 제어
+// ======================================================
+let current = 0;
+const SLIDES = ['s1','spractice','s2','s4','s5','s6','s7'];   // 오프닝→연습→실제→질문→격자→패턴→AX
+const TOTAL = SLIDES.length;
+
+const NOTES = [
+  "게임 하나 하고 시작할게요! 화면에 1~40이 흩어져 나와요. 1·2·3 순서대로, 눈으로만, 최대한 빨리 찾는 겁니다. 먼저 가볍게 연습부터.",
+  "(연습) 자, 한번 해보세요 — 1부터 순서대로. 연습이니 편하게! (오른쪽 아래 회색 점 = 연습 표시, 발표자용)",
+  "이제 진짜예요! 시간 잽니다. 30·45·60초 중 골라서 시작 — 10초 남으면 깜빡이고, 끝나면 '시간 초과!'",
+  "그렇게 익숙한 숫자인데 왜 못 찾았을까요? 숫자가 어려워서가 아니라, 크기·색·위치가 제각각이라 패턴이 안 보였기 때문입니다.",
+  "여기 이렇게 선을 그어 구조(3×3 · 9칸)를 주면 — 갑자기 쉬워져요. 칸으로 나눠 보면 되니까.",
+  "같은 숫자인데, 구조가 보이니 다르죠? 패턴이 보이면 같은 정보도 다르게 보입니다.",
+  "방금 그 숫자들, 하나도 어려운 게 없었죠. 규칙이 안 보였을 뿐이에요. 여러분이 AI 앞에서 막막한 것도 똑같아요 — 클로드·MCP·스킬이 쏟아지는데 어디서부터, 어떻게 연결되는지 안 보이는 거죠. 해봐도 별로고, 어딜 봐도 AI 얘기뿐이라 불안하고요. 근데 그것도 어려워서가 아니라, 아직 규칙이 안 보일 뿐이에요. 규칙을 알면 쉬워집니다. 그 규칙을 이번 AX 멘토링에서 같이 찾고, 직접 써보는 시간이에요.",
+];
+
+function showSlide(idx) {
+  clearInterval(timerInterval); timerRunning = false;   // 슬라이드 이동 시 타이머·소리 정지
+  SLIDES.forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('active', i === idx);
+  });
+  document.getElementById('slide-counter').textContent = (idx + 1) + ' / ' + TOTAL;
+  document.getElementById('note-text').textContent = NOTES[idx];
+  const sid = SLIDES[idx];
+  if (sid === 'spractice') { renderBoard('practice-board', PRACTICE_POSITIONS); resetTimer(); }
+  if (sid === 's2') resetTimer();
+  if (sid === 's5') {
+    renderBoard('grid-board', POSITIONS);
+    buildGridOverlay('grid-overlay', 3, 3);   // 3×3 = 9칸
+  }
+  if (sid === 's6') {
+    renderBoard('reveal-board', POSITIONS, {uniform: true, cellColor: true, circle: true});
+    buildGridOverlay('reveal-grid-overlay', 3, 3);
+  }
+}
+
+function nextSlide() {
+  if (current < TOTAL - 1) { current++; showSlide(current); }
+}
+function prevSlide() {
+  if (current > 0) { current--; showSlide(current); }
+}
+
+// 클릭 네비 (게임판 버튼 제외)
+document.getElementById('stage').addEventListener('click', function(e) {
+  if (e.target.closest('.timer-controls')) return;
+  if (e.target.closest('.mute-btn')) return;
+  if (e.target.closest('.timer-start-btn')) return;
+  if (e.target.closest('#note-panel')) return;
+  if (e.target.closest('.nav-hint')) return;
+  if (e.target.closest('#bottom-bar')) return;
+  nextSlide();
+});
+
+// 키보드
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextSlide();
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') prevSlide();
+  else if (e.key === 'n' || e.key === 'N') toggleNote();
+  else if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+  else if (e.key === ' ') {
+    e.preventDefault();
+    if (SLIDES[current] === 's2' || SLIDES[current] === 'spractice') startTimer();
+  }
+});
+
+// ======================================================
+//  발표자 멘트 토글
+// ======================================================
+let noteVisible = false;
+function toggleNote() {
+  noteVisible = !noteVisible;
+  document.getElementById('note-panel').classList.toggle('visible', noteVisible);
+}
+
+// ======================================================
+//  풀스크린
+// ======================================================
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+document.addEventListener('fullscreenchange', () => {
+  const b = document.getElementById('fs-btn');
+  if (b) b.textContent = document.fullscreenElement ? '⛶ 창 모드' : '⛶ 전체화면';
+});
+
+// ======================================================
+//  타이머
+// ======================================================
+let timerInterval = null;
+let selectedDuration = 30;
+let timerSeconds = 30;
+let timerRunning = false;
+
+// ---- 긴장감 사운드 (Web Audio · 외부 파일 없음) ----
+let audioCtx = null, audioOn = true;
+function ensureAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+function tone(freq, dur, type, gain) {
+  if (!audioOn || !audioCtx) return;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type || 'sine'; o.frequency.value = freq;
+  const now = audioCtx.currentTime;
+  g.gain.setValueAtTime(0.0001, now);
+  g.gain.exponentialRampToValueAtTime(gain || 0.15, now + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(now); o.stop(now + dur + 0.02);
+}
+function playTick(urgent) { tone(urgent ? 1000 : 430, urgent ? 0.13 : 0.05, 'square', urgent ? 0.16 : 0.06); }
+function playBuzzer() { tone(200, 0.55, 'sawtooth', 0.22); setTimeout(() => tone(150, 0.65, 'sawtooth', 0.22), 130); }
+function toggleMute() {
+  audioOn = !audioOn;
+  document.querySelectorAll('.mute-btn').forEach(b => b.textContent = audioOn ? '🔊' : '🔇');
+}
+
+// 활성 슬라이드 안에서 타이머 요소 찾기(연습판·실제판 공용)
+function curSlide() { return document.getElementById(SLIDES[current]); }
+function cq(sel) { const s = curSlide(); return s ? s.querySelector(sel) : null; }
+function syncDurBtns() {
+  const s = curSlide(); if (!s) return;
+  s.querySelectorAll('.dur-btn').forEach(b => b.classList.toggle('active', Number(b.dataset.sec) === selectedDuration));
+}
+
+function setDuration(sec) {
+  if (timerRunning) return;
+  selectedDuration = sec;
+  syncDurBtns();
+  resetTimer();
+}
+
+function resetTimer() {
+  clearInterval(timerInterval);
+  timerRunning = false;
+  timerSeconds = selectedDuration;
+  const display = cq('.timer-display');
+  if (display) { display.textContent = selectedDuration; display.classList.remove('done', 'blink'); display.style.color = '#0F172A'; }
+  const board = cq('.board-wrap');
+  if (board) board.classList.remove('urgent');
+  const ov = cq('.time-up-overlay');
+  if (ov) ov.classList.remove('show');
+  const ctrl = cq('.timer-controls');
+  if (ctrl) ctrl.style.display = 'flex';
+  syncDurBtns();
+}
+
+function startTimer() {
+  if (timerRunning) return;
+  ensureAudio();
+  timerRunning = true;
+  timerSeconds = selectedDuration;
+  const ctrl = cq('.timer-controls');
+  if (ctrl) ctrl.style.display = 'none';
+  const display = cq('.timer-display');
+  const board = cq('.board-wrap');
+  const ov = cq('.time-up-overlay');
+  if (display) { display.textContent = selectedDuration; display.classList.remove('done', 'blink'); display.style.color = '#0F172A'; }
+  playTick(false);
+  timerInterval = setInterval(() => {
+    timerSeconds--;
+    if (timerSeconds <= 0) {
+      clearInterval(timerInterval);
+      timerRunning = false;
+      if (display) { display.textContent = '0'; display.classList.remove('blink'); display.classList.add('done'); }
+      if (board) board.classList.remove('urgent');
+      if (ov) ov.classList.add('show');
+      playBuzzer();
+      // ⚠ 자동으로 다음 슬라이드로 넘어가지 않음 — 발표자가 직접 넘김
+      return;
+    }
+    if (display) display.textContent = timerSeconds;
+    if (timerSeconds <= 10) {
+      if (display) display.classList.add('blink');   // 10초 이하 깜빡임
+      if (board) board.classList.add('urgent');
+      playTick(true);
+    } else {
+      playTick(false);
+    }
+  }, 1000);
+}
+
+// ======================================================
+//  초기 렌더
+// ======================================================
+(function init() {
+  renderBoard('practice-board', PRACTICE_POSITIONS);  // 연습판(첨부 이미지 배치)
+  renderBoard('game-board', POSITIONS);               // 실제판(round-robin 규칙)
+  // 초기 슬라이드
+  showSlide(0);
+})();
+</script>
+</body>
+</html>
